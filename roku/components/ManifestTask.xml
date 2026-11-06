@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="ManifestTask" extends="Task">
+    <interface>
+        <field id="apiBaseUrl" type="string" />
+        <field id="apiKey" type="string" />
+        <field id="sourceUrl" type="string" />
+        <field id="manifest" type="node" alwaysNotify="true" />
+        <field id="errorMessage" type="string" alwaysNotify="true" />
+    </interface>
+    <script type="text/brightscript" uri="pkg:/components/ManifestTask.brs" />
+</component>

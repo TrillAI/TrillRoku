@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="MainScene" extends="Scene">
+    <interface>
+        <!-- Replace apiBaseUrl with the public HTTPS origin of backend/app.py. -->
+        <field id="apiBaseUrl" type="string" value="https://YOUR_API_HOST" />
+        <!-- Optional; must match TRILLROKU_API_KEY on the middleware. -->
+        <field id="apiKey" type="string" value="" />
+        <!-- Leave empty to prompt for a page URL or Android companion scan code. -->
+        <field id="initialSourceUrl" type="string" value="" />
+    </interface>
+    <children>
+        <Rectangle
+            id="background"
+            width="1280"
+            height="720"
+            color="0x101827FF" />
+
+        <Label
+            id="header"
+            translation="[72, 38]"
+            width="1120"
+            height="52"
+            text="TrillRoku Video Browser"
+            font="font:LargeSystemFont"
+            color="0xFFFFFFFF" />
+        <Label
+            id="status"
+            translation="[72, 100]"
+            width="1120"
+            height="54"
+            text="Enter a source URL to begin."
+            font="font:MediumSystemFont"
+            color="0xC8D5E5FF"
+            wrap="true" />
+
+        <!-- One row keeps PosterGrid.itemSelected indexes aligned with the manifest. -->
+        <PosterGrid
+            id="posterGrid"
+            translation="[72, 170]"
+            width="1136"
+            height="390"
+            itemSize="[300, 169]"
+            itemSpacing="[22, 20]"
+            numRows="1"
+            drawFocusFeedback="true" />
+
+        <ButtonGroup
+            id="buttonGroup"
+            translation="[72, 600]" />
+        <Label
+            id="help"
+            translation="[72, 666]"
+            width="1120"
+            height="30"
+            text="Select a poster to play. Playback loops until Back stops it; Options changes the website URL or Android scan code."
+            font="font:SmallSystemFont"
+            color="0x8EA2BAFF"
+            wrap="true" />
+
+        <!-- The player becomes full-screen when a poster is selected. -->
+        <Video
+            id="video"
+            translation="[0, 0]"
+            width="1280"
+            height="720"
+            visible="false" />
+
+        <ManifestTask id="manifestTask" />
+    </children>
+    <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
+</component>
