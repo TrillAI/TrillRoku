@@ -65,6 +65,7 @@ Optional environment settings (see `backend/.env.example`):
 - `TRILLROKU_ALLOWED_HOSTS`: optional comma-separated exact hostname allowlist for source pages and redirects.
 - `TRILLROKU_CORS_ORIGINS`: browser origins or `*`; native apps do not use browser CORS.
 - `TRILLROKU_DB_PATH`: SQLite file for scan records; use persistent storage in production.
+- `PEXELS_API_KEY`: optional server-side key for the Pexels stock-video API. It is never sent to Android or Roku.
 - `TRILLROKU_PORT`: local development port, default `8000`.
 
 ### Recursive scan API
@@ -102,6 +103,23 @@ The response includes the discovered list, scan statistics, and a `scanId`:
 
 The scraper recognizes HTML `<video>` / `<source>`, Open Graph/Twitter metadata, `VideoObject` JSON-LD, common lazy-source attributes, and direct `.mp4` / `.m3u8` links. It crawls ordinary same-origin links and iframes up to the selected limits; direct streams can live on a CDN.
 
+### Direct-video stock catalog: Pexels
+
+For a catalog that returns direct playable files, the companion also has a **Search Pexels Stock Videos** action. The backend calls Pexels' video-search API with the server-side `PEXELS_API_KEY`, chooses an HTTPS MP4 file (preferring a resolution up to Full HD), and saves the normalized list under a Roku scan code. The Roku receives ordinary `streamFormat: "mp4"` entries and can autoplay them with the existing remote flow. This is a general stock-footage catalog, not an adult-video provider, and Pexels results do not include performer-age verification. It does not meet an adult-only verified-feed requirement. Review Pexels API/license terms before production use and retain the returned contributor/page attribution.
+
+Set `PEXELS_API_KEY` in the middleware process environment (the example file documents the setting; the app does not load `.env` files automatically), then Android can submit:
+
+```json
+{"query":"nature","page":1,"perPage":50}
+```
+
+to `POST /api/providers/pexels/scan`. This endpoint stores the result for 24 hours and returns a scan code like the website scanner. The Pexels key stays on the server; do not put it in either client package. For a local shell, export the key before starting Flask:
+
+```bash
+export PEXELS_API_KEY="your-server-side-key"
+python -m backend.app
+```
+
 ### Crawl limits and security
 
 “Any and every video” cannot be guaranteed across arbitrary websites. This implementation is intentionally bounded and best-effort: it scans same-origin server-rendered pages up to the requested page/depth caps. It will miss URLs created only by client-side JavaScript, unsupported external player pages, login-required media, DRM/encrypted streams, or videos hidden behind access controls. If `truncated` is true, increase the scan limits or scan a narrower section of the site.
@@ -110,9 +128,9 @@ The backend accepts public HTTP(S) targets on standard ports, checks DNS address
 
 ## Android companion: native UI, no WebView
 
-Project files are in `android/`. The screen includes the permission notice/required acknowledgement, API origin, optional API key, source URL, recursive depth/page controls, scan progress, discovered stream list, and a **Copy Roku scan code** button. It uses Android SDK views, `HttpURLConnection`, and `org.json`; no WebView or third-party UI/network library is included.
+Project files are in `android/`. The screen includes the permission notice/required acknowledgement, API origin, optional TrillRoku API key, website/query field, recursive depth/page controls, scan progress, discovered stream list, and a **Copy Roku scan code** button. It offers both website scanning and Pexels stock-video search. It uses Android SDK views, `HttpURLConnection`, and `org.json`; no WebView or third-party UI/network library is included.
 
-Open the `android/` directory in Android Studio and build the `app` APK (min SDK 26, target SDK 35). The API URL field defaults to the Cloudflare host in `config/api-base-url.txt`; it is editable in-app and has a reset-to-packaged-value button. Enter an optional API key and permitted site URL, acknowledge the disclaimer, and scan. Copy the returned code and type it into the Roku source prompt.
+Open the `android/` directory in Android Studio and build the `app` APK (min SDK 26, target SDK 35). The API URL field defaults to the Cloudflare host in `config/api-base-url.txt`; it is editable in-app and has a reset-to-packaged-value button. Enter an optional TrillRoku API key and acknowledge the disclaimer. Use **Scan Website** with a permitted site URL, or enter a query and choose **Search Pexels Stock Videos** after configuring the server-side Pexels key. Copy the returned code and type it into the Roku source prompt.
 
 ## Roku SceneGraph client
 

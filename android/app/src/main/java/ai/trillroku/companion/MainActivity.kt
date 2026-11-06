@@ -32,6 +32,8 @@ private data class VideoEntry(
     val url: String,
     val thumb: String,
     val streamFormat: String,
+    val attribution: String = "",
+    val pageUrl: String = "",
 )
 
 class MainActivity : Activity() {
@@ -44,6 +46,7 @@ class MainActivity : Activity() {
     private lateinit var pagesInput: EditText
     private lateinit var permissionCheckBox: CheckBox
     private lateinit var scanButton: Button
+    private lateinit var pexelsButton: Button
     private lateinit var copyCodeButton: Button
     private lateinit var statusText: TextView
     private lateinit var scanCodeText: TextView
@@ -108,8 +111,8 @@ class MainActivity : Activity() {
         )
         sourceInput = addEditField(
             page,
-            "Website URL to scan",
-            "https://example.org/videos",
+            "Website URL to scan or Pexels search phrase",
+            "https://example.org/videos or nature",
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI,
             preferences.getString("sourceUrl", "") ?: "",
         )
@@ -129,7 +132,7 @@ class MainActivity : Activity() {
         )
 
         permissionCheckBox = CheckBox(this).apply {
-            text = "I own this content or have permission to access and stream it."
+            text = "I am authorized to access and stream the content I select."
             textSize = 14f
             setTextColor(Color.rgb(35, 45, 55))
         }
@@ -141,11 +144,18 @@ class MainActivity : Activity() {
             setOnClickListener { startScan() }
         }
         page.addView(scanButton, verticalParams(top = 8))
+        pexelsButton = Button(this).apply {
+            text = "Search Pexels Stock Videos"
+            isEnabled = false
+            setOnClickListener { searchPexels() }
+        }
+        page.addView(pexelsButton, verticalParams(top = 4))
         permissionCheckBox.setOnCheckedChangeListener { _, checked ->
             scanButton.isEnabled = checked
+            pexelsButton.isEnabled = checked
         }
 
-        statusText = textView("Enter the API and website URL, acknowledge the disclaimer, then scan.", 14f, Color.rgb(55, 70, 85))
+        statusText = textView("Enter the API and a website URL or Pexels search phrase, acknowledge the disclaimer, then continue.", 14f, Color.rgb(55, 70, 85))
         page.addView(statusText, verticalParams(top = 12))
 
         scanCodeText = textView("", 18f, Color.rgb(18, 68, 112), bold = true).apply {
@@ -167,47 +177,79 @@ class MainActivity : Activity() {
         page.addView(resultsContainer, verticalParams(top = 8))
     }
 
-    private fun startScan() {
+    private fun apiBaseOrReportError(): String? {
         val apiBase = apiBaseInput.text.toString().trim().trimEnd('/')
-        val sourceUrl = sourceInput.text.toString().trim()
-        val apiKey = apiKeyInput.text.toString().trim()
         val apiUri = Uri.parse(apiBase)
-        val sourceUri = Uri.parse(sourceUrl)
-        val sourceScheme = sourceUri.scheme
         if (apiUri.scheme != "https" || apiUri.host.isNullOrBlank() || apiUri.userInfo != null) {
             statusText.text = "Enter a public HTTPS API origin without a path or embedded credentials."
-            return
+            return null
         }
+        return apiBase
+    }
+
+    private fun startScan() {
+        val apiBase = apiBaseOrReportError() ?: return
+        val sourceUrl = sourceInput.text.toString().trim()
+        val sourceUri = Uri.parse(sourceUrl)
+        val sourceScheme = sourceUri.scheme
         if ((sourceScheme != "http" && sourceScheme != "https") || sourceUri.host.isNullOrBlank() || sourceUri.userInfo != null) {
             statusText.text = "Enter a valid public HTTP(S) website URL."
             return
         }
-
+        val apiKey = apiKeyInput.text.toString().trim()
         val maxDepth = (depthInput.text.toString().toIntOrNull() ?: 3).coerceIn(0, 5)
         val maxPages = (pagesInput.text.toString().toIntOrNull() ?: 100).coerceIn(1, 500)
+        savePreferences(apiBase, apiKey, sourceUrl, maxDepth, maxPages)
+        postForManifest(
+            apiBase,
+            apiKey,
+            "/api/scan",
+            JSONObject().put("url", sourceUrl).put("maxDepth", maxDepth).put("maxPages", maxPages),
+            "Scanning up to $maxPages same-origin pages…",
+        )
+    }
+
+    private fun searchPexels() {
+        val apiBase = apiBaseOrReportError() ?: return
+        val query = sourceInput.text.toString().trim()
+        if (query.isBlank()) {
+            statusText.text = "Enter a Pexels search phrase."
+            return
+        }
+        val apiKey = apiKeyInput.text.toString().trim()
+        savePreferences(apiBase, apiKey, query, 3, 100)
+        postForManifest(
+            apiBase,
+            apiKey,
+            "/api/providers/pexels/scan",
+            JSONObject().put("query", query).put("page", 1).put("perPage", 50),
+            "Searching Pexels stock videos…",
+        )
+    }
+
+    private fun savePreferences(apiBase: String, apiKey: String, source: String, depth: Int, pages: Int) {
         getSharedPreferences("trillroku-companion", Context.MODE_PRIVATE).edit()
             .putString("apiBaseUrl", apiBase)
             .putString("apiKey", apiKey)
-            .putString("sourceUrl", sourceUrl)
-            .putString("maxDepth", maxDepth.toString())
-            .putString("maxPages", maxPages.toString())
+            .putString("sourceUrl", source)
+            .putString("maxDepth", depth.toString())
+            .putString("maxPages", pages.toString())
             .apply()
+    }
 
+    private fun postForManifest(apiBase: String, apiKey: String, path: String, body: JSONObject, progress: String) {
         scanButton.isEnabled = false
+        pexelsButton.isEnabled = false
         copyCodeButton.visibility = View.GONE
         scanCodeText.visibility = View.GONE
         resultsContainer.removeAllViews()
-        statusText.text = "Scanning up to $maxPages same-origin pages…"
-        val requestBody = JSONObject()
-            .put("url", sourceUrl)
-            .put("maxDepth", maxDepth)
-            .put("maxPages", maxPages)
-            .toString()
+        statusText.text = progress
+        val requestBody = body.toString()
 
         executor.execute {
             var connection: HttpURLConnection? = null
             try {
-                connection = (URL("$apiBase/api/scan").openConnection() as HttpURLConnection).apply {
+                connection = (URL("$apiBase$path").openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     connectTimeout = 10_000
                     readTimeout = 180_000
@@ -226,19 +268,21 @@ class MainActivity : Activity() {
                 val responseText = responseStream?.use { readLimited(it, 12 * 1024 * 1024) } ?: ""
                 if (responseCode !in 200..299) {
                     val message = runCatching { JSONObject(responseText).optString("error") }
-                        .getOrDefault("Scan request failed (HTTP $responseCode).")
-                    throw IOException(message.ifBlank { "Scan request failed (HTTP $responseCode)." })
+                        .getOrDefault("Request failed (HTTP $responseCode).")
+                    throw IOException(message.ifBlank { "Request failed (HTTP $responseCode)." })
                 }
                 val payload = JSONObject(responseText)
                 val results = parseVideos(payload.optJSONArray("items") ?: JSONArray())
                 runOnUiThread {
                     scanButton.isEnabled = permissionCheckBox.isChecked
+                    pexelsButton.isEnabled = permissionCheckBox.isChecked
                     showResults(payload, results)
                 }
             } catch (error: Exception) {
                 runOnUiThread {
                     scanButton.isEnabled = permissionCheckBox.isChecked
-                    statusText.text = error.message ?: "Could not complete the scan. Check the API URL and server logs."
+                    pexelsButton.isEnabled = permissionCheckBox.isChecked
+                    statusText.text = error.message ?: "Could not complete the request. Check the API URL and server logs."
                 }
             } finally {
                 connection?.disconnect()
@@ -248,11 +292,16 @@ class MainActivity : Activity() {
 
     private fun showResults(payload: JSONObject, videos: List<VideoEntry>) {
         val scanId = payload.optString("scanId", "")
+        val provider = payload.optString("provider", "")
         val pagesScanned = payload.optInt("pagesScanned", 0)
         val truncated = payload.optBoolean("truncated", false)
-        statusText.text = buildString {
-            append("Found ${videos.size} direct video stream(s) across $pagesScanned page(s).")
-            if (truncated) append(" Scan limit reached; increase depth/pages to continue." )
+        statusText.text = if (provider == "pexels") {
+            "Loaded ${videos.size} Pexels MP4 file(s) from page ${payload.optInt("page", 1)} (${payload.optInt("perPage", 50)} requested; ${payload.optInt("totalResults", 0)} total matches)."
+        } else {
+            buildString {
+                append("Found ${videos.size} direct video stream(s) across $pagesScanned page(s).")
+                if (truncated) append(" Scan limit reached; increase depth/pages to continue.")
+            }
         }
         if (scanId.isNotBlank()) {
             scanCodeText.text = "Roku scan code: $scanId  •  expires in about 24 hours"
@@ -262,7 +311,12 @@ class MainActivity : Activity() {
 
         resultsContainer.removeAllViews()
         if (videos.isEmpty()) {
-            resultsContainer.addView(textView("No direct MP4/HLS streams were found in the pages scanned.", 14f, Color.DKGRAY))
+            val emptyMessage = if (provider == "pexels") {
+                "No MP4 files were available on this Pexels results page."
+            } else {
+                "No direct MP4/HLS streams were found in the pages scanned."
+            }
+            resultsContainer.addView(textView(emptyMessage, 14f, Color.DKGRAY))
             return
         }
         videos.forEachIndexed { index, video ->
@@ -278,6 +332,12 @@ class MainActivity : Activity() {
             card.addView(textView("${index + 1}. ${video.title}", 16f, Color.rgb(25, 43, 61), bold = true))
             card.addView(textView(video.streamFormat.uppercase(), 12f, Color.rgb(18, 97, 145)).withTopMargin(4))
             card.addView(textView(video.url, 13f, Color.rgb(65, 78, 92)).apply { textIsSelectable = true }.withTopMargin(4))
+            if (video.attribution.isNotBlank()) {
+                card.addView(textView(video.attribution, 12f, Color.rgb(80, 94, 108)).withTopMargin(4))
+            }
+            if (video.pageUrl.isNotBlank()) {
+                card.addView(textView("Provider page: ${video.pageUrl}", 12f, Color.rgb(80, 94, 108)).apply { textIsSelectable = true }.withTopMargin(4))
+            }
             if (video.thumb.isNotBlank()) {
                 card.addView(textView("Thumbnail: ${video.thumb}", 12f, Color.rgb(110, 120, 130)).withTopMargin(4))
             }
@@ -296,6 +356,8 @@ class MainActivity : Activity() {
                 url = url,
                 thumb = item.optString("thumb", ""),
                 streamFormat = item.optString("streamFormat", "").ifBlank { "unknown" },
+                attribution = item.optString("attribution", ""),
+                pageUrl = item.optString("pageUrl", ""),
             )
         }
         return entries

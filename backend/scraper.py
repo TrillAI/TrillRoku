@@ -60,15 +60,22 @@ class VideoItem:
     thumb: str
     url: str
     stream_format: str
+    attribution: str = ""
+    page_url: str = ""
 
     def to_dict(self) -> dict[str, str]:
-        """Return the wire format consumed by the Roku Task node."""
-        return {
+        """Return the wire format consumed by the Roku and Android clients."""
+        item = {
             "title": self.title,
             "thumb": self.thumb,
             "url": self.url,
             "streamFormat": self.stream_format,
         }
+        if self.attribution:
+            item["attribution"] = self.attribution
+        if self.page_url:
+            item["pageUrl"] = self.page_url
+        return item
 
 
 @dataclass

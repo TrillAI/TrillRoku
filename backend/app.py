@@ -8,6 +8,7 @@ from typing import Callable
 
 from flask import Flask, jsonify, request
 
+from .providers.pexels import PexelsNotConfiguredError, PexelsProviderError, PexelsVideoProvider
 from .scan_store import ScanStore
 from .scraper import (
     DEFAULT_CRAWL_DEPTH,
@@ -36,6 +37,7 @@ def _bounded_option(value: object, default: int, minimum: int, maximum: int) -> 
 def create_app(
     *,
     scraper_factory: Callable[[], SiteScraper] | None = None,
+    pexels_provider_factory: Callable[[], PexelsVideoProvider] | None = None,
     scan_store: ScanStore | None = None,
     api_key: str | None = None,
     cors_origins: list[str] | None = None,
@@ -47,6 +49,7 @@ def create_app(
         os.getenv("TRILLROKU_CORS_ORIGINS", "*")
     )
     app.config["SCRAPER_FACTORY"] = scraper_factory or SiteScraper
+    app.config["PEXELS_PROVIDER_FACTORY"] = pexels_provider_factory or PexelsVideoProvider
     app.config["SCAN_STORE"] = scan_store or ScanStore()
 
     @app.before_request
@@ -156,6 +159,43 @@ def create_app(
             "maxDepth": max_depth,
             "maxPages": max_pages,
         }
+        return jsonify(app.config["SCAN_STORE"].save(manifest_data))
+
+    @app.route("/api/providers/pexels/scan", methods=["POST", "OPTIONS"])
+    def pexels_scan():
+        if request.method == "OPTIONS":
+            return "", 204
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify({"error": "POST a JSON object containing a 'query' string."}), 400
+        query = payload.get("query", "")
+        if not isinstance(query, str) or not query.strip():
+            return jsonify({"error": "A non-empty 'query' is required."}), 400
+        page = _bounded_option(payload.get("page"), 1, 1, 1_000_000)
+        per_page = _bounded_option(payload.get("perPage"), 50, 1, 80)
+        try:
+            result = app.config["PEXELS_PROVIDER_FACTORY"]().search(
+                query,
+                page=page,
+                per_page=per_page,
+            )
+        except PexelsNotConfiguredError as exc:
+            return jsonify({"error": str(exc)}), 503
+        except PexelsProviderError as exc:
+            return jsonify({"error": str(exc)}), 502
+
+        manifest_data = {
+            "provider": "pexels",
+            "source": f"Pexels search: {query.strip()}",
+            "query": query.strip(),
+            "count": len(result.items),
+            "totalResults": result.total_results,
+            "page": result.page,
+            "perPage": result.per_page,
+            "items": [item.to_dict() for item in result.items],
+        }
+        if result.next_page:
+            manifest_data["nextPage"] = result.next_page
         return jsonify(app.config["SCAN_STORE"].save(manifest_data))
 
     @app.get("/api/scans/<scan_id>")
