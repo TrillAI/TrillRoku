@@ -90,10 +90,15 @@ class MainActivity : Activity() {
         apiBaseInput = addEditField(
             page,
             "Middleware API base URL (HTTPS)",
-            "https://api.example.org",
+            BuildConfig.TRILLROKU_API_BASE_URL,
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI,
-            preferences.getString("apiBaseUrl", "") ?: "",
+            preferences.getString("apiBaseUrl", BuildConfig.TRILLROKU_API_BASE_URL)
+                ?: BuildConfig.TRILLROKU_API_BASE_URL,
         )
+        page.addView(Button(this).apply {
+            text = "Reset API host to packaged value"
+            setOnClickListener { apiBaseInput.setText(BuildConfig.TRILLROKU_API_BASE_URL) }
+        }, verticalParams(top = 4))
         apiKeyInput = addEditField(
             page,
             "API key (optional)",

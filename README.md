@@ -19,7 +19,7 @@ PosterGrid ── remote selects a poster ──► Video plays and advances on 
                                              └── loops until Back/Stop
 ```
 
-The companion displays the scan results and a short-lived code. Enter that code in the Roku app's source prompt (or use **Change Source URL**); Roku then loads the exact same stored list, so the viewer can choose with the remote without retyping a long URL. Scan codes expire after 24 hours. The Roku can also scan a website URL itself.
+The companion displays the scan results and a short-lived code. Enter that code in the Roku app's source prompt (or use **Change Source / Scan Code**); Roku then loads the exact same stored list, so the viewer can choose with the remote without retyping a long URL. Scan codes expire after 24 hours. The Roku can also scan a website URL itself.
 
 ## Permission notice
 
@@ -37,7 +37,27 @@ python -m pip install pytest  # only needed to run tests
 python -m backend.app
 ```
 
-The development server listens on `0.0.0.0:8000`; `/healthz` is a health check. For a public deployment, serve Flask behind a production WSGI server and HTTPS reverse proxy. The Roku and Android devices must be able to reach the API over HTTPS.
+The development server listens on `0.0.0.0:8000`; `/healthz` is a health check. For the current Cloudflare connection, clients use `https://origins-monitored-accomplish-constraints.trycloudflare.com`. You reported that its `/healthz` endpoint returned `{"status":"ok"}`. The tunnel forwards HTTPS traffic to the local Flask API over `http://127.0.0.1:8000`.
+
+### Cloudflare Tunnel and editable API host
+
+Start Flask in one terminal, then run the Cloudflare Quick Tunnel in another:
+
+```bash
+python -m backend.app
+# another terminal
+scripts/start-cloudflare-quick-tunnel.sh
+```
+
+The script runs `cloudflared tunnel --url http://127.0.0.1:8000`; install `cloudflared` on the API host first. Quick Tunnel hostnames can change when the tunnel is restarted. For a stable long-term host, use a named Cloudflare Tunnel and a hostname you control; for Quick Tunnel changes, update the shared origin in `config/api-base-url.txt` as described below.
+
+To change it, run:
+
+```bash
+python3 scripts/sync_api_base_url.py https://new-host.trycloudflare.com
+```
+
+This updates the shared config and Roku XML. The Android Gradle build reads the same config as its packaged default; rebuild the APK to update that default. The API host is also editable directly in the Android app, and Roku uses the synchronized XML value (repackage the Roku channel after changing it). To verify the currently configured host, run `curl -fsS "$(cat config/api-base-url.txt)/healthz"`; it should return `{"status":"ok"}`.
 
 Optional environment settings (see `backend/.env.example`):
 
@@ -52,7 +72,7 @@ Optional environment settings (see `backend/.env.example`):
 `POST /api/scan` crawls same-origin links breadth-first. `maxDepth` and `maxPages` are bounded by the server (depth 0–5, pages 1–500); defaults are depth 3 and 100 pages.
 
 ```bash
-curl -X POST https://api.example.org/api/scan \
+curl -X POST https://origins-monitored-accomplish-constraints.trycloudflare.com/api/scan \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://example.org/videos","maxDepth":3,"maxPages":100}'
 ```
@@ -92,7 +112,7 @@ The backend accepts public HTTP(S) targets on standard ports, checks DNS address
 
 Project files are in `android/`. The screen includes the permission notice/required acknowledgement, API origin, optional API key, source URL, recursive depth/page controls, scan progress, discovered stream list, and a **Copy Roku scan code** button. It uses Android SDK views, `HttpURLConnection`, and `org.json`; no WebView or third-party UI/network library is included.
 
-Open the `android/` directory in Android Studio and build the `app` APK (min SDK 26, target SDK 35). Enter your public HTTPS middleware origin, optionally enter its API key, enter a permitted site URL, acknowledge the disclaimer, and scan. Copy the returned code and type it into the Roku source prompt.
+Open the `android/` directory in Android Studio and build the `app` APK (min SDK 26, target SDK 35). The API URL field defaults to the Cloudflare host in `config/api-base-url.txt`; it is editable in-app and has a reset-to-packaged-value button. Enter an optional API key and permitted site URL, acknowledge the disclaimer, and scan. Copy the returned code and type it into the Roku source prompt.
 
 ## Roku SceneGraph client
 
@@ -102,11 +122,7 @@ The channel package is in `roku/`:
 - `components/MainScene.xml` / `MainScene.brs`: URL or scan-code prompt, `PosterGrid`, player, and autoplay logic.
 - `components/ManifestTask.xml` / `ManifestTask.brs`: off-render-thread HTTP request, JSON parsing, and `ContentNode` creation.
 
-Before packaging, edit `roku/components/MainScene.xml`:
-
-1. Set `apiBaseUrl` to the public middleware origin, e.g. `https://api.example.org` (without `/api/manifest`).
-2. If enabled on the server, set `apiKey` to the same key.
-3. Optionally set `initialSourceUrl` to a source URL or companion scan code; leave blank to prompt.
+`roku/components/MainScene.xml` is synchronized from `config/api-base-url.txt` by `scripts/sync_api_base_url.py`; the current default is the live Cloudflare origin above. If you update the origin, run the sync command and repackage the Roku channel. If enabled on the server, set `apiKey` in the XML to the same key. Optionally set `initialSourceUrl` to a source URL or companion scan code; leave it blank to prompt.
 
 The Roku grid is a single `PosterGrid` row so `itemSelected` indexes line up with the manifest. Selecting a poster assigns a fresh content node; `onContentChange()` starts playback. On `Video.state == "finished"`, the next entry starts and the sequence wraps. Press **Back** to stop playback and return to the grid.
 

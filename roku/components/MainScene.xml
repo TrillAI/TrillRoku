@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <component name="MainScene" extends="Scene">
     <interface>
-        <!-- Replace apiBaseUrl with the public HTTPS origin of backend/app.py. -->
-        <field id="apiBaseUrl" type="string" value="https://YOUR_API_HOST" />
+        <!-- Synced from config/api-base-url.txt by scripts/sync_api_base_url.py. -->
+        <field id="apiBaseUrl" type="string" value="https://origins-monitored-accomplish-constraints.trycloudflare.com" />
         <!-- Optional; must match TRILLROKU_API_KEY on the middleware. -->
         <field id="apiKey" type="string" value="" />
         <!-- Leave empty to prompt for a page URL or Android companion scan code. -->
