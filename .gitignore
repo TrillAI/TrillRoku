@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Local environment / editor files
+.env
+.DS_Store
+.vscode/
+.idea/
+
+# Android Studio / Gradle outputs
+.gradle/
+**/build/
+local.properties
+
+# Packaged Roku uploads and local scan database
+*.pkg
+*.zip
+*.sqlite3
+*.sqlite3-*
